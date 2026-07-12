@@ -1,6 +1,8 @@
 """Trust-core gate tests: RFC 6962 tree, inclusion proofs, STHs."""
 import hashlib
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 from app.trust import merkle
 from app.trust.ca import generate_ed25519_keypair
@@ -99,6 +101,22 @@ class TestInclusionProofs:
         # old proofs still verify against the OLD root (append-only history)
         proof = merkle.inclusion_proof(1, leaves[:6])
         assert merkle.verify_inclusion(proof.leaf_hash, 1, proof.audit_path, 6, old_root.hex())
+
+
+class TestSharedVectorFixture:
+    """Both Python and the TypeScript verify_inclusion mirror
+    (frontend/src/lib/merkle.test.ts) are tested against this same fixture —
+    carry-forward item #1. Regenerate with `python -m scripts.gen_merkle_vectors`."""
+
+    def test_python_matches_fixture(self) -> None:
+        path = Path(__file__).resolve().parents[2] / "fixtures" / "merkle_vectors.json"
+        cases = json.loads(path.read_text())["cases"]
+        assert len(cases) > 800
+        for c in cases:
+            result = merkle.verify_inclusion(
+                c["leaf_hash"], c["leaf_index"], c["audit_path"], c["tree_size"], c["root_hash"]
+            )
+            assert result == c["expected"], c["label"]
 
 
 class TestSTH:
