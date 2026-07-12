@@ -69,7 +69,7 @@ def _extract_hosts(text: str) -> list[tuple[str, str]]:
     return out
 
 
-def _domain_lookalike(host: str, registered: list[str]) -> str | None:
+def domain_lookalike(host: str, registered: list[str]) -> str | None:
     """Levenshtein ≤ 2 or homoglyph-skeleton match against registered domains
     (checked per label-chunk so `rneridianbroking-refunds.top` still hits
     `meridianbroking.example`)."""
@@ -118,7 +118,7 @@ def analyze_risk(
         if host in registered_domains:
             signals.append(RiskSignal(code="DOMAIN_REGISTERED", weight=0, evidence=host))
             continue
-        looked = _domain_lookalike(host, registered_domains)
+        looked = domain_lookalike(host, registered_domains)
         if looked:
             lookalike = True
             signals.append(

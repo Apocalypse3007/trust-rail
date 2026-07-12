@@ -50,8 +50,9 @@ from app.models import (
 )
 from app.pipeline import hashing, media
 from app.pipeline.claims import extract_claim, load_entity_refs
+from app.pipeline.emailcheck import EmailParsed, email_reason_codes, parse_eml
 from app.pipeline.ingest import IngestError, IngestResult, ingest_file, ingest_text, ingest_url
-from app.pipeline.risk import BlacklistRef, analyze_risk
+from app.pipeline.risk import BlacklistRef, RiskSignal, analyze_risk
 from app.pipeline.verdict import (
     Candidate,
     Decision,
@@ -127,17 +128,23 @@ def _blacklist_refs(db: Session) -> list[BlacklistRef]:
     return [BlacklistRef(kind=r.kind.value, value=r.value, campaign=r.campaign) for r in rows]
 
 
-def _query_hashes_and_text(ir: IngestResult) -> tuple[QueryHashes, str]:
+def _query_hashes_and_text(
+    ir: IngestResult,
+) -> tuple[QueryHashes, str, EmailParsed | None]:
     """Per-kind query hashes + the text fed to claims/risk. Captions/OCR are
     out of scope (spec §8.4) — image/video claims come only from the
     explicit claimed_sender_text field the caller mixes in."""
     if ir.kind == InputKind.image:
         data = ir.data or b""
-        return QueryHashes(
-            sha256=hashing.sha256_hex(data),
-            phash64=hashing.phash64_hex(data),
-            pdq256=hashing.pdq256_hex(data),
-        ), ""
+        return (
+            QueryHashes(
+                sha256=hashing.sha256_hex(data),
+                phash64=hashing.phash64_hex(data),
+                pdq256=hashing.pdq256_hex(data),
+            ),
+            "",
+            None,
+        )
     if ir.kind == InputKind.video:
         data = ir.data or b""
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
@@ -147,32 +154,30 @@ def _query_hashes_and_text(ir: IngestResult) -> tuple[QueryHashes, str]:
             frames = media.extract_frame_phashes(tmp_path)
         finally:
             tmp_path.unlink(missing_ok=True)
-        return QueryHashes(sha256=hashing.sha256_hex(data), video_frame_hashes=frames), ""
+        return QueryHashes(sha256=hashing.sha256_hex(data), video_frame_hashes=frames), "", None
     if ir.kind == InputKind.pdf:
         data = ir.data or b""
         text = "".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(data)).pages)
         simhash = hashing.simhash64_hex(text) if text.strip() else None
-        return QueryHashes(sha256=hashing.sha256_hex(data), simhash64=simhash), text
+        return QueryHashes(sha256=hashing.sha256_hex(data), simhash64=simhash), text, None
     if ir.kind == InputKind.eml:
-        # Minimal path for Epic 5 — full DKIM/domain-alignment lands in Epic 9 (§13).
-        import email
-        from email.policy import default as email_policy
-
-        msg = email.message_from_bytes(ir.data or b"", policy=email_policy)
-        body_part = msg.get_body(preferencelist=("plain", "html"))
-        body_text = body_part.get_content() if body_part is not None else ""
-        full_text = f"{msg.get('Subject', '')}\n{body_text}"
+        parsed = parse_eml(ir.data or b"")
+        full_text = f"{parsed.subject}\n{parsed.body_text}"
         simhash = hashing.simhash64_hex(full_text) if full_text.strip() else None
-        return QueryHashes(simhash64=simhash), full_text
+        return QueryHashes(simhash64=simhash), full_text, parsed
     if ir.kind == InputKind.text:
         text = ir.text or ""
-        return QueryHashes(
-            sha256=hashing.sha256_hex(text.encode("utf-8")),
-            simhash64=hashing.simhash64_hex(text),
-        ), text
+        return (
+            QueryHashes(
+                sha256=hashing.sha256_hex(text.encode("utf-8")),
+                simhash64=hashing.simhash64_hex(text),
+            ),
+            text,
+            None,
+        )
     if ir.kind == InputKind.url:
-        return QueryHashes(), ir.url or ""
-    return QueryHashes(), ""
+        return QueryHashes(), ir.url or "", None
+    return QueryHashes(), "", None
 
 
 def _downgrade_if_key_revoked(db: Session, decision: Decision) -> Decision:
@@ -293,7 +298,7 @@ async def verify(
 
     resolved_locale = locale if locale in ("en", "hi") else settings.default_locale
 
-    query_hashes, body_text = _query_hashes_and_text(ingest_result)
+    query_hashes, body_text, email_parsed = _query_hashes_and_text(ingest_result)
     combined_text = " ".join(t for t in (claimed_sender_text, body_text) if t)
 
     entities = load_entity_refs(db)
@@ -306,6 +311,25 @@ async def verify(
         phash64=query_hashes.phash64,
         phash_match_max_dist=settings.phash_match_max_dist,
     )
+
+    extra_reasons: list[ReasonCode] = []
+    if email_parsed is not None:
+        email_reasons = email_reason_codes(email_parsed, registered_domains)
+        extra_reasons = [ReasonCode(c) for c in email_reasons.codes]
+        if email_reasons.domain_lookalike_of:
+            # From-domain lookalike (spec §13) is a fraud-positive, same as an
+            # in-body lookalike link — analyze_risk() never sees the From:
+            # header, so it's folded in here rather than duplicating the
+            # lookalike sweep inside decide() itself.
+            risk.signals.append(
+                RiskSignal(
+                    code="LOOKALIKE_DOMAIN",
+                    weight=5,
+                    evidence=f"From: {email_parsed.from_domain} imitates {email_reasons.domain_lookalike_of}",
+                )
+            )
+            risk.fraud_positive = True
+            risk.risk_high = True
 
     thresholds = MatchThresholds(
         phash_match_max_dist=settings.phash_match_max_dist,
@@ -323,6 +347,7 @@ async def verify(
             risk=risk,
             referenced_comm_sha256=_referenced_comm_sha256(db, combined_text),
             query_sha256=query_hashes.sha256,
+            extra_reasons=extra_reasons,
         )
     )
     decision = _downgrade_if_key_revoked(db, decision)
