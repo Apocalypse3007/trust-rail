@@ -1,0 +1,138 @@
+# TrustRail — Demo Runbook
+
+Follow this exactly. Every step names the real button, the real file, and
+the real verdict you should see — nothing here requires reading code.
+
+## 0. Reset
+
+This machine has no `make` binary (Windows, no Chocolatey/WSL `make`
+installed) — run the three commands `make demo-reset` would chain, from
+`backend/`:
+
+```
+.venv\Scripts\python.exe -m alembic downgrade base
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m scripts.seed
+```
+
+(On a machine with `make` installed, just run `make demo-reset`.)
+
+This wipes and rebuilds the whole demo world: 12 entities, 15 signing
+keys, the `FXROAD-DEMO` blacklist fixtures, 10 pre-published communications
+(3 filings, 3 images, 3 SMS, 1 email), and 60 days of historical telemetry.
+It prints a cheat sheet at the end with entity IDs and the file list.
+
+Then start both servers (each in its own terminal, from the repo root):
+
+```
+cd backend  &&  .venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
+cd frontend &&  pnpm dev
+```
+
+Open three browser tabs: **http://localhost:3000/issuer**, **/verify**, and
+**/supervision**.
+
+## 1. Issuer: publish the CEO announcement — live
+
+In the **/issuer** tab:
+1. Entity dropdown → **Kumaon Metals Ltd**.
+2. Persona dropdown → the entry ending in **(maker, active)**.
+3. Click **New communication**. Title: `Kumaon Metals — CEO announcement`.
+   Channel: `video`. Impact: `market_moving`. File: `assets_input/ceo_announcement.mp4`.
+   Click **Create draft**.
+4. On the new row, click **Sign (maker)**.
+5. Switch the persona dropdown to the entry ending in **(checker, active)**.
+6. Click **Co-sign & publish** on the same row.
+7. Point at the green banner: **"Log root updated: `<old>` → `<new>`"** —
+   that's the transparency log advancing live, on this exact click.
+
+*(The video isn't pre-published by the seed script on purpose — this step
+is the first time it's ever published, so the root-delta banner means
+something.)*
+
+## 2. Terminal: mangle the video like WhatsApp would
+
+```
+cd backend
+.venv\Scripts\python.exe -m scripts.wa_sim_transform ..\assets_input\ceo_announcement.mp4 --preset crf26 -o ..\assets_input\ceo_mangled.mp4
+```
+
+This re-encodes at 848px width, CRF 26, strips metadata — the same
+`ffmpeg` flags a real WhatsApp forward applies.
+
+## 3. Verify: the mangled video still checks out
+
+In the **/verify** tab: drop `assets_input/ceo_mangled.mp4` into the
+composer, leave everything else blank, click **Send**.
+
+Expect: **✅ Verified**, entity Kumaon Metals Ltd, log entry matching what
+you just published in step 1. Click **"How this was checked"** — the trace
+reads `hard_binding: no manifest` → `registry_match: video match` (the
+re-encode destroyed any embedded manifest; the video-frame hash match is
+what actually verified it — this is the whole reason soft binding exists).
+Click **View certificate** to open the one-time certificate page — note it
+shows the signature chain and log root; if you reload that same link it
+will now show a "used" state (single-use, as designed).
+
+## 4. Verify: a tampered filing
+
+In **/verify**, use **Drop a file** and pick `assets_input/filing1.pdf`
+with "Claimed sender" set to `Kumaon Metals Ltd` — send it as-is once to
+see it hash-match (✅ Verified). Then open the PDF, change the "Revenue
+from operations" figure (`9,588.18` → anything else), save it, and submit
+the modified copy with the same claimed sender.
+
+Expect **⚠️ Caution — cannot be confirmed** (`OFFICIAL_CLAIM_UNVERIFIED`),
+*not* a red "high risk" card. This is a correction from the original build
+spec's draft narration, verified against the actual (already gate-tested,
+Epic 4) verdict engine: a claim with no registry match and no *additional*
+fraud signal (no lookalike domain, no blacklist hit, no tampered
+signature) lands on "caution," not "likely fake" — `PAYMENT_ASK` alone
+isn't enough to flip it. This is arguably the more honest result: the
+system isn't inventing confidence it doesn't have. Narrate it as "claims
+to be official, doesn't match anything we've verified, treat with
+suspicion" rather than promising a red card here.
+
+## 5. Verify: the fake IPO SMS
+
+In **/verify**, switch to **Paste text**, paste exactly:
+
+```
+MERIDN IPO allotment confirmed! Pay allotment fee now to http://rneridianbroking-refunds.top/claim — last 2 hours only. Pay via UPI meridianrefund@okpay
+```
+
+Expect: **🚨 High risk — likely fake**, reasons include `LOOKALIKE_DOMAIN`
+and `BLACKLIST_MATCH`, and the card names the campaign **FXROAD-DEMO**.
+
+## 6. Verify: a plain news paragraph
+
+Paste: `Benchmark indices ended higher today led by banking and IT stocks.`
+
+Expect: **ℹ️ No official claim detected** — calm, not alarming. This is the
+base-rate answer: most forwarded content makes no claim at all, and the
+system says so plainly instead of guessing.
+
+## 7. Supervision: see the flags land
+
+Switch to the **/supervision** tab (polls every 10s, so wait a moment
+after step 5). The India map should show a flagged count on whichever
+state you picked in step 5's `state_code` field (add one if you skipped
+it), and the campaigns table should show **FXROAD-DEMO**.
+
+## 8. Admin: revoke the key, re-verify
+
+Back in **/issuer**, with **Kumaon Metals Ltd** + the **maker** persona
+selected, click **Simulate key compromise**. Read the banner. Now go back
+to **/verify** and re-submit the *same mangled video* from step 3.
+
+Expect: **⚠️ Verified — with notice** (`KEY_REVOKED_AFTER_SIGNING`) instead
+of a plain Verified — the content still matches, but the signing key is
+now known-compromised. Open **/log** and confirm the revocation is its own
+log entry (not a silent edit) and that the original publish entry (step 1)
+still verifies its inclusion proof.
+
+---
+
+**Contingency:** if anything breaks live, re-run step 0 — it restores a
+clean world in under a minute. Keep a screen recording of a full pass as
+backup.

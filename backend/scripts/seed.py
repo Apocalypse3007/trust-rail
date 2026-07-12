@@ -128,7 +128,11 @@ PUBLISH_PLAN: list[tuple[str, str, str, str, str | tuple[str, str]]] = [
     ("Meridian Broking Ltd", "New margin rules infographic", "image", "standard", "image1.jpg"),
     ("Suvarna Mutual Fund", "Scheme performance summary", "image", "standard", "image2.jpg"),
     ("National Demo Exchange (NDX)", "Trading calendar notice", "image", "standard", "image3.jpg"),
-    ("Kumaon Metals Ltd", "Kumaon Metals — CEO announcement", "video", "market_moving", "ceo_announcement.mp4"),
+    # NOTE: the CEO announcement video is deliberately NOT auto-published here.
+    # DEMO.md step 1 publishes it live (draft -> sign -> co-sign) so the
+    # judges watch the log root update in real time — publishing it twice
+    # (once here, once live) would leave two candidates with the identical
+    # artifact hash and an ambiguous match on which log entry is "the" one.
     ("Meridian Broking Ltd", "Margin shortfall notice", "sms", "standard",
      ("text", "MERIDN: Margin shortfall in your account. Add funds by T+1 via the official app. Never share OTPs. — Meridian Broking Ltd, SEBI reg DEMO-INZ-000123")),
     ("Suvarna Mutual Fund", "NAV update", "sms", "standard",
