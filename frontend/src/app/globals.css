@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #0a1b2e;
+  --paper: #f7f5f0;
+  --card: #ffffff;
+  --hairline: #e4e0d6;
+  --verified: #0e7c4a;
+  --notice: #b87a00;
+  --fake: #c6362b;
+  --info: #5b6b7c;
+  --seal: #8a6d1d;
+}
+
+body {
+  background-color: var(--paper);
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

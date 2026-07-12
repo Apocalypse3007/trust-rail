@@ -1,0 +1,52 @@
+"""FastAPI app factory."""
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from redis import Redis
+from sqlalchemy import text
+
+from app.api.issuer import router as issuer_router
+from app.api.log import router as log_router
+from app.api.registry import router as registry_router
+from app.api.telemetry import router as telemetry_router
+from app.api.tokens import router as tokens_router
+from app.api.verify import router as verify_router
+from app.config import get_settings
+from app.db import engine
+
+
+def create_app() -> FastAPI:
+    settings = get_settings()
+    app = FastAPI(title="TrustRail", version="0.1.0")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[settings.base_url],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.include_router(registry_router)
+    app.include_router(issuer_router)
+    app.include_router(log_router)
+    app.include_router(verify_router)
+    app.include_router(tokens_router)
+    app.include_router(telemetry_router)
+
+    @app.get("/healthz")
+    def healthz() -> dict[str, object]:
+        db_ok = False
+        redis_ok = False
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            db_ok = True
+        except Exception:
+            pass
+        try:
+            redis_ok = bool(Redis.from_url(settings.redis_url, socket_timeout=2).ping())
+        except Exception:
+            pass
+        return {"ok": db_ok and redis_ok, "db": db_ok, "redis": redis_ok}
+
+    return app
+
+
+app = create_app()

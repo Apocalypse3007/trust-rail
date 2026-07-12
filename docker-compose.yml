@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: trustrail-db
+    environment:
+      POSTGRES_USER: trustrail
+      POSTGRES_PASSWORD: tr41l_dev_pg_2026
+      POSTGRES_DB: trustrail
+    ports:
+      # 5433 was silently claimed by an unrelated native Windows postgres process
+      # already running on this machine (not Docker) — moved to 5434 to avoid it
+      # rather than touching a process this project didn't start.
+      - "5434:5432"
+    volumes:
+      - trustrail_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trustrail -d trustrail"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: trustrail-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - trustrail_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  trustrail_pgdata:
+  trustrail_redisdata:

@@ -1,0 +1,23 @@
+# runtime + secrets
+var/
+.env
+assets_input/*
+!assets_input/.gitkeep
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# node
+node_modules/
+frontend/.next/
+frontend/out/
+*.tsbuildinfo
+
+# misc
+.DS_Store
+*.log

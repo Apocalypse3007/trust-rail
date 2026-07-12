@@ -1,0 +1,63 @@
+{
+  "verdict": {
+    "verified": {
+      "title": "✅ Verified",
+      "body": "Issued by {entity} (SEBI reg {reg}). Published {date} via {channel}. Tamper-evident log entry #{seq}."
+    },
+    "verified_notice": {
+      "title": "⚠️ Verified — with notice",
+      "body": "Validly signed by {entity} on {date}, but the signing key was revoked on {revoked_date}. Confirm on the entity's official channel before acting."
+    },
+    "official_claim_unverified": {
+      "title": "⚠️ Caution — cannot be confirmed",
+      "body": "This claims to be from {claimed}, but no registered communication matches. Treat it as unsafe."
+    },
+    "likely_fake": {
+      "title": "🚨 High risk — likely fake",
+      "body": "{top_reason}. Do not act on it. Never pay or share OTPs based on this message."
+    },
+    "informational": {
+      "title": "ℹ️ No official claim detected",
+      "body": "This doesn't claim to be an official market communication. Stay alert for guaranteed-return promises."
+    }
+  },
+  "advice": {
+    "sebi_check": "Before paying anyone, verify the payee on SEBI Check.",
+    "radar_added": "Added to the fraud radar."
+  },
+  "button": {
+    "view_certificate": "View certificate",
+    "sebi_check": "Verify payee on SEBI Check",
+    "expand_trace": "How this was checked"
+  },
+  "reasons": {
+    "SIG_CHAIN_VALID": "Digital signature chain is valid and the signing key was active at the time.",
+    "C2PA_VALID": "Content credentials (C2PA) manifest is present and valid.",
+    "C2PA_MISSING": "No content credentials manifest was found.",
+    "C2PA_INVALID": "Content credentials manifest is present but failed to validate.",
+    "TAMPERED_SIGNATURE": "The signature does not validate against an active key at the time of signing.",
+    "TAMPERED_CONTENT": "This references a specific communication, but the content doesn't match it.",
+    "KEY_REVOKED_AFTER_SIGNING": "The signing key was revoked after this content was signed.",
+    "HASH_EXACT_MATCH": "Content is byte-identical to a registered communication.",
+    "PHASH_MATCH": "Content matches a registered communication's image.",
+    "PDQ_MATCH": "Content matches a registered communication's image (PDQ).",
+    "SIMHASH_MATCH": "Content matches a registered communication's text.",
+    "VIDEO_MATCH": "Content matches a registered communication's video.",
+    "PHASH_NEAR": "Content is visually close to a registered communication but not an exact match — possible tampered copy.",
+    "COMM_WITHDRAWN": "The matching communication was withdrawn by its issuer.",
+    "ENTITY_CLAIM_STRONG": "This content names a specific registered entity.",
+    "ENTITY_CLAIM_WEAK": "This content uses official-sounding language without naming a specific entity.",
+    "HOMOGLYPH_ENTITY": "The entity name uses look-alike characters to imitate a registered name.",
+    "LOOKALIKE_DOMAIN": "This domain closely imitates a registered domain.",
+    "DOMAIN_REGISTERED": "This domain is registered to the named entity.",
+    "DOMAIN_NOT_REGISTERED": "This domain is not registered to any known entity.",
+    "DKIM_ALIGN_PASS": "Email authentication (DKIM) aligns with the sending domain.",
+    "DKIM_ALIGN_FAIL": "Email authentication (DKIM) does not align with the sending domain.",
+    "AUTH_HEADERS_UNAVAILABLE": "Original authentication headers unavailable on forwarded mail.",
+    "BLACKLIST_MATCH": "This matches a known scam pattern.",
+    "RISK_PHRASES": "Contains language commonly used in investment scams.",
+    "PAYMENT_ASK": "Asks for a direct payment or transfer.",
+    "URL_RISK": "Contains a suspicious link.",
+    "NO_OFFICIAL_CLAIM": "Does not claim to be from any registered entity."
+  }
+}
