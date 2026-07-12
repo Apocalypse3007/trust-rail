@@ -285,7 +285,7 @@ def write_metrics(rows: list[Row]) -> bool:
     fp_total = sum(1 for r in negatives if r.matched)
 
     lines: list[str] = []
-    lines.append("# TrustRail — Evaluation Metrics (spec §16.2)\n")
+    lines.append("# TrustRail: Evaluation Metrics (spec §16.2)\n")
     n_image_transforms = len({r.transform for r in positives if r.group == "image"})
     n_video_transforms = len({r.transform for r in positives if r.group == "video"})
     n_text_transforms = len({r.transform for r in positives if r.group == "text"})
@@ -297,10 +297,10 @@ def write_metrics(rows: list[Row]) -> bool:
                  f"{sum(1 for r in negatives if r.group == 'negative_text')} unrelated text snippets).\n")
 
     # --- Table 1: hard-binding survival ---
-    lines.append("## Table 1 — Hard-binding survival per transform\n")
+    lines.append("## Table 1: Hard-binding survival per transform\n")
     lines.append(
         "This build's `/verify` contract has no sidecar-envelope input field (see PROGRESS.md "
-        "Epic 5) — hard binding is always `no_manifest` here, by design, for every transform "
+        "Epic 5), so hard binding is always `no_manifest` here, by design, for every transform "
         "including the untransformed original. **This is exactly why soft (registry) binding "
         "exists**: it's the only path that survives WhatsApp-style re-encoding, and Table 2 is "
         "the number that actually matters.\n"
@@ -312,7 +312,7 @@ def write_metrics(rows: list[Row]) -> bool:
     lines.append("")
 
     # --- Table 2: soft-match precision/recall/F1 ---
-    lines.append("## Table 2 — Registry soft-match precision / recall / F1\n")
+    lines.append("## Table 2: Registry soft-match precision, recall, and F1\n")
     lines.append("| Group | Transform | Recall | Cases |")
     lines.append("|---|---|---|---|")
     by_group_transform: dict[tuple[str, str], list[Row]] = defaultdict(list)
@@ -341,17 +341,17 @@ def write_metrics(rows: list[Row]) -> bool:
                  f"(worst single transform, not just overall).\n")
     if not targets_met:
         lines.append(
-            f"**TARGET MISSED** — worst transform `{worst_key}` recall {worst_recall:.2f} < "
-            f"{RECALL_TARGET}, or overall precision {precision:.3f} < {PRECISION_TARGET}. "
+            f"**TARGET MISSED**: worst transform `{worst_key}` recall {worst_recall:.2f} is below "
+            f"{RECALL_TARGET}, or overall precision {precision:.3f} is below {PRECISION_TARGET}. "
             f"**§16.2 documented fallback applies: lean the demo on the exact-hash & envelope "
-            f"path rather than soft-match for the affected transform(s).** Not softened — "
+            f"path rather than soft-match for the affected transform(s).** Not softened, "
             f"stated plainly per the master-go instruction.\n"
         )
     else:
-        lines.append("**Targets met** on every transform — no fallback needed.\n")
+        lines.append("**Targets met** on every transform, so no fallback is needed.\n")
 
     # --- Table 3: latency + confusion matrix ---
-    lines.append("## Table 3 — Latency (ms) per stage, and verdict confusion\n")
+    lines.append("## Table 3: Latency (ms) per stage, and verdict confusion\n")
     stage_ms: dict[str, list[float]] = defaultdict(list)
     for r in rows:
         for step in r.trace:
