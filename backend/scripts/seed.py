@@ -3,12 +3,16 @@
 Implemented: §15.1 trust material, §15.2 entities, §15.3 published
 communications (needs owner media in assets_input/ — FAILS LOUDLY when
 missing, by design; set SEED_ALLOW_MISSING_ASSETS=1 to seed a partial
-world during development). Later epics add §15.4 scam fixtures and
-§15.5 telemetry history + cheat sheet.
+world during development), §15.4 blacklist fixtures (domain + phrase —
+the phash/"RECYCLED-CREATIVE" campaign fixture needs a purpose-built edited
+image and isn't built yet, see PROGRESS.md), §15.5 telemetry history +
+cheat sheet.
 """
 import os
+import random
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import delete, select
@@ -23,11 +27,15 @@ from app.models import (
     EntityDomain,
     EntityKind,
     EntitySmsHeader,
+    InputKind,
     Key,
     KeyRole,
     LogEntry,
     ScamBlacklist,
+    BlacklistKind,
+    Verdict,
     Verification,
+    VerifyChannel,
     ViewToken,
 )
 from app.trust.ca import ensure_trust_material, generate_ed25519_keypair
@@ -202,6 +210,98 @@ def seed_communications(db, repo_root: Path) -> int:
     return published
 
 
+# §15.4 scam fixtures — domain + phrase only (see module docstring)
+BLACKLIST_FIXTURES: list[tuple[BlacklistKind, str, str, str]] = [
+    (BlacklistKind.domain, "rneridianbroking-refunds.top", "FXROAD-DEMO", "seed"),
+    (BlacklistKind.domain, "demosecboard-verify.xyz", "FXROAD-DEMO", "seed"),
+    (BlacklistKind.phrase, "guaranteed 3% daily returns", "FXROAD-DEMO", "seed"),
+]
+
+
+def seed_blacklist(db) -> int:
+    n = 0
+    for kind, value, campaign, source in BLACKLIST_FIXTURES:
+        db.add(ScamBlacklist(kind=kind, value=value, campaign=campaign, source=source, active=True))
+        n += 1
+    return n
+
+
+# §15.5 telemetry history: 60 rows over 14 days, ≥12 states, mix of verdicts.
+HISTORY_STATES = ["IN-MH", "IN-KA", "IN-RJ", "IN-DL", "IN-UP", "IN-GJ",
+                   "IN-TN", "IN-TS", "IN-WB", "IN-MP", "IN-HR", "IN-PB"]
+HISTORY_VERDICT_WEIGHTS: list[tuple[Verdict, int]] = [
+    (Verdict.INFORMATIONAL, 26),
+    (Verdict.VERIFIED, 16),
+    (Verdict.OFFICIAL_CLAIM_UNVERIFIED, 8),
+    (Verdict.LIKELY_FAKE, 9),
+    (Verdict.VERIFIED_NOTICE, 1),
+]
+HISTORY_CLAIMED_ENTITIES = [
+    "Meridian Broking Ltd", "Kumaon Metals Ltd", "Suvarna Mutual Fund",
+    "Demo Securities Board", "National Demo Exchange (NDX)",
+]
+_REASON_BY_VERDICT: dict[Verdict, list[str]] = {
+    Verdict.VERIFIED: ["SIG_CHAIN_VALID"],
+    Verdict.VERIFIED_NOTICE: ["KEY_REVOKED_AFTER_SIGNING"],
+    Verdict.OFFICIAL_CLAIM_UNVERIFIED: ["ENTITY_CLAIM_STRONG"],
+    Verdict.LIKELY_FAKE: ["LOOKALIKE_DOMAIN", "BLACKLIST_MATCH", "PAYMENT_ASK"],
+    Verdict.INFORMATIONAL: ["NO_OFFICIAL_CLAIM"],
+}
+
+
+def seed_history(db, n: int = 60) -> int:
+    rng = random.Random(20260712)  # fixed seed: reproducible demo history
+    verdicts = [v for v, _ in HISTORY_VERDICT_WEIGHTS]
+    weights = [w for _, w in HISTORY_VERDICT_WEIGHTS]
+    now = datetime.now(UTC)
+
+    for _ in range(n):
+        verdict = rng.choices(verdicts, weights=weights)[0]
+        flagged = verdict in (Verdict.LIKELY_FAKE, Verdict.OFFICIAL_CLAIM_UNVERIFIED)
+        campaign = "FXROAD-DEMO" if verdict == Verdict.LIKELY_FAKE and rng.random() < 0.6 else None
+        claimed = (
+            rng.choice(HISTORY_CLAIMED_ENTITIES)
+            if verdict in (Verdict.OFFICIAL_CLAIM_UNVERIFIED, Verdict.LIKELY_FAKE)
+            else None
+        )
+        created_at = now - timedelta(
+            days=rng.uniform(0, 14), hours=rng.uniform(0, 23), minutes=rng.uniform(0, 59)
+        )
+        db.add(
+            Verification(
+                channel=rng.choices([VerifyChannel.sim, VerifyChannel.whatsapp], weights=[85, 15])[0],
+                input_kind=rng.choice(list(InputKind)),
+                verdict=verdict,
+                reasons=_REASON_BY_VERDICT[verdict],
+                signals={"seeded": True},
+                claimed_entity_text=claimed,
+                campaign=campaign,
+                state_code=rng.choice(HISTORY_STATES) if flagged or rng.random() < 0.5 else None,
+                latency_ms=rng.randint(80, 2400),
+                created_at=created_at,
+            )
+        )
+    return n
+
+
+def print_cheat_sheet(entities: list[Entity]) -> None:
+    by_name = {e.name: e for e in entities}
+    print("\n" + "=" * 72)
+    print("DEMO CHEAT SHEET")
+    print("=" * 72)
+    print("Forward these from assets_input/ in the /verify simulator:")
+    print("  filing1.pdf        -> Kumaon Metals Q1 FY27 results (has the revenue figure)")
+    print("  image1/2/3.jpg     -> Meridian / Suvarna / NDX notices")
+    print("  ceo_announcement.mp4 -> Kumaon Metals CEO announcement (market_moving)")
+    print("Personas (X-Demo-Persona = key id, see /api/registry/entities):")
+    for name in ("Meridian Broking Ltd", "Kumaon Metals Ltd", "Suvarna Mutual Fund"):
+        e = by_name.get(name)
+        if e:
+            print(f"  {name}: entity_id={e.id}")
+    print("Supervision dashboard: http://localhost:3000/supervision")
+    print("=" * 72 + "\n")
+
+
 def main() -> None:
     settings = get_settings()
     repo_root = settings.trust_dir.parent.parent
@@ -213,12 +313,14 @@ def main() -> None:
     with SessionLocal() as db:
         wipe(db)
         entities = seed_entities(db)
+        n_blacklist = seed_blacklist(db)
         db.commit()
 
         featured = [fx.name for fx in ENTITIES if fx.featured]
         print(f"seeded {len(entities)} entities ({len(featured)} featured: {', '.join(featured)})")
         n_keys = sum(2 if fx.featured else 1 for fx in ENTITIES)
         print(f"seeded {n_keys} signing keys")
+        print(f"seeded {n_blacklist} blacklist fixtures")
         print(f"registry STH public key: {material.registry_sth.public_key_b64}")
 
         n_published = seed_communications(db, repo_root)
@@ -226,6 +328,12 @@ def main() -> None:
             db.expire_all()
             tree_size = len(db.execute(select(LogEntry.seq)).scalars().all())
             print(f"published {n_published} communications; transparency log has {tree_size} leaves")
+
+        n_history = seed_history(db)
+        db.commit()
+        print(f"seeded {n_history} historical verification rows over 14 days")
+
+        print_cheat_sheet(entities)
 
 
 if __name__ == "__main__":
